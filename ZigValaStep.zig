@@ -5,16 +5,16 @@ const Builder = std.build.Builder;
 builder: *Builder,
 step: Step,
 exe: *std.build.LibExeObjStep,
-file: []const u8,
+files: std.ArrayList([]const u8),
 deps: std.ArrayList([]const u8),
 path: []const u8,
 
 const ZigValaStep = @This();
 
-pub fn init(b: *Builder, name: []const u8, file: []const u8) *ZigValaStep {
+pub fn init(b: *Builder, name: []const u8) *ZigValaStep {
     var res = b.allocator.create(ZigValaStep) catch @panic("out of memory");
     res.* = .{
-        .file = file,
+        .files = std.ArrayList([]const u8).init(b.allocator),
         .step = Step.init(.custom, "compile a vala project", b.allocator, make),
         .exe = b.addExecutable(name, null),
         .builder = b,
@@ -22,21 +22,27 @@ pub fn init(b: *Builder, name: []const u8, file: []const u8) *ZigValaStep {
         .path = std.fs.path.join(b.allocator, &.{ b.build_root, "zig-cache", "vala" }) catch @panic("out of memory"),
     };
 
-    const c_file = std.fs.path.join(b.allocator, &.{
-        res.path,
-        std.mem.concat(
-            b.allocator,
-            u8,
-            &.{ removeExtension(res.file), ".c" },
-        ) catch @panic("out of memory"),
-    }) catch @panic("out of memory");
-    defer b.allocator.free(c_file);
-
     res.exe.step.dependOn(&res.step);
     res.exe.linkLibC();
-    res.exe.addCSourceFile(c_file, &.{});
 
     return res;
+}
+
+pub fn addSourceFile(self: *ZigValaStep, file: []const u8) void {
+    const allocator = self.builder.allocator;
+
+    const c_file = std.fs.path.join(allocator, &.{
+        self.path,
+        std.mem.concat(
+            allocator,
+            u8,
+            &.{ removeExtension(file), ".c" },
+        ) catch @panic("out of memory"),
+    }) catch @panic("out of memory");
+    defer allocator.free(c_file);
+
+    self.exe.addCSourceFile(c_file, &.{});
+    self.files.append(file) catch @panic("out of memory");
 }
 
 pub fn addPackage(self: *ZigValaStep, pkg: []const u8) void {
@@ -60,9 +66,12 @@ fn make(step: *Step) !void {
 
     try args.append("valac");
     try args.append("-C");
-    try args.append(self.file);
     try args.append("-d");
     try args.append(self.path);
+
+    for (self.files.items) |file| {
+        try args.append(file);
+    }
 
     for (self.deps.items) |dep| {
         try args.append("--pkg");
