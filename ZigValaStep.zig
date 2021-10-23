@@ -1,3 +1,5 @@
+// ZigValaStep.zig - Integration of Vala with Zig.
+// Copyright 2021 iddev5. Licensed under MIT License.
 const std = @import("std");
 const Step = std.build.Step;
 const Builder = std.build.Builder;
